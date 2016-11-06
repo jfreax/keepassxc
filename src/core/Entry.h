@@ -82,6 +82,11 @@ public:
     const EntryAttributes* attributes() const;
     EntryAttachments* attachments();
     const EntryAttachments* attachments() const;
+    bool hasTOTP() const;
+
+    QString getTOTP() const;
+    void setSeedTOTP(QString seed);
+    QString seed();
 
     static const int DefaultIconNumber;
 

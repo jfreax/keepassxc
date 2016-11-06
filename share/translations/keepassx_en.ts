@@ -786,6 +786,14 @@ Do you want to save it anyway?</source>
         <source>Can&apos;t delete icon. Still used by %1 items.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Error</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Can&apos;t read icon:</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>EditWidgetProperties</name>
@@ -1186,6 +1194,18 @@ This is a one-way migration. You won&apos;t be able to open the imported databas
         <source>Writing the database failed.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>TOTP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ctrl+T</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>TOTPSeetings</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>OptionDialog</name>
@@ -1286,6 +1306,49 @@ Only entries with the same scheme (http://, https://, ftp://, ...) are returned<
     </message>
     <message>
         <source>Default port: 19455</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>PasswordGeneratorWidget</name>
+    <message>
+        <source>Password:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Length:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Character Types</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Upper Case Letters</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Lower Case Letters</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Numbers</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Special Characters</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exclude look-alike characters</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ensure that the password contains characters from every group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Accept</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1540,6 +1603,10 @@ Please unlock the selected database or choose another one which is unlocked.</so
         <source>Hide window to system tray on App start</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Show TOTP in a dialog window</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SettingsWidgetSecurity</name>
@@ -1561,6 +1628,21 @@ Please unlock the selected database or choose another one which is unlocked.</so
     </message>
     <message>
         <source>Always ask before performing auto-type</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>TOTPSettings</name>
+    <message>
+        <source>Dialog</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enter the TOTP Seed:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>OK</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

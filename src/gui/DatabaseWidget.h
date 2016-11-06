@@ -83,6 +83,7 @@ public:
     bool currentEntryHasPassword();
     bool currentEntryHasUrl();
     bool currentEntryHasNotes();
+    bool currentEntryHasTOTP();
 
 Q_SIGNALS:
     void closeRequest();
@@ -111,6 +112,9 @@ public Q_SLOTS:
     void copyURL();
     void copyNotes();
     void copyAttribute(QAction* action);
+    void getTOTP();
+    void editTOTP();
+    void showQRcode();
     void performAutoType();
     void openUrl();
     void openUrlForEntry(Entry* entry);

@@ -330,7 +330,7 @@ Voulez-vous quand même l&apos;ouvrir ? Dans ce cas, elle sera ouverte en lectur
         <translation>Verrouiller la base de données</translation>
     </message>
     <message>
-        <source>Can't lock the database as you are currently editing it.
+        <source>Can&apos;t lock the database as you are currently editing it.
 Please press cancel to finish your changes or discard them.</source>
         <translation>Impossible de verrouiller la base de données lors de modifications.
 Cliquez sur Annuler pour finir vos modifications ou abandonnez-les.</translation>
@@ -375,7 +375,7 @@ Voulez-vous quand même la sauvegarder ?</translation>
     </message>
     <message>
         <source>Unable to open the database.</source>
-        <translation type="unfinished"/>
+        <translation type="unfinished">Impossible d&apos;ouvrir la base de données.</translation>
     </message>
 </context>
 <context>
@@ -406,7 +406,10 @@ Voulez-vous quand même la sauvegarder ?</translation>
     </message>
     <message numerus="yes">
         <source>Do you really want to move %n entry(s) to the recycle bin?</source>
-        <translation><numerusform>Voulez-vous déplacer %n entrée(s) vers la corbeille ?</numerusform><numerusform>Voulez-vous déplacer %n entrée(s) vers la corbeille ?</numerusform></translation>
+        <translation>
+            <numerusform>Voulez-vous déplacer %n entrée(s) vers la corbeille ?</numerusform>
+            <numerusform>Voulez-vous déplacer %n entrée(s) vers la corbeille ?</numerusform>
+        </translation>
     </message>
     <message>
         <source>Delete group?</source>
@@ -511,11 +514,17 @@ Voulez-vous quand même la sauvegarder ?</translation>
     </message>
     <message numerus="yes">
         <source>%n week(s)</source>
-        <translation><numerusform>%n semaine(s)</numerusform><numerusform>%n semaine(s)</numerusform></translation>
+        <translation>
+            <numerusform>%n semaine(s)</numerusform>
+            <numerusform>%n semaine(s)</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>%n month(s)</source>
-        <translation><numerusform>%n mois</numerusform><numerusform>%n mois</numerusform></translation>
+        <translation>
+            <numerusform>%n mois</numerusform>
+            <numerusform>%n mois</numerusform>
+        </translation>
     </message>
     <message>
         <source>1 year</source>
@@ -748,7 +757,18 @@ Voulez-vous quand même la sauvegarder ?</translation>
     </message>
     <message numerus="yes">
         <source>Can&apos;t delete icon. Still used by %n item(s).</source>
-        <translation><numerusform>Impossible de supprimer l&apos;icône. Toujours utilisée par %n objet(s).</numerusform><numerusform>Impossible de supprimer l&apos;icône. Toujours utilisée par %n objet(s).</numerusform></translation>
+        <translation>
+            <numerusform>Impossible de supprimer l&apos;icône. Toujours utilisée par %n objet(s).</numerusform>
+            <numerusform>Impossible de supprimer l&apos;icône. Toujours utilisée par %n objet(s).</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation type="unfinished">Erreur</translation>
+    </message>
+    <message>
+        <source>Can&apos;t read icon:</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Error</source>
@@ -873,7 +893,7 @@ Voulez-vous quand même la sauvegarder ?</translation>
     </message>
     <message>
         <source>Wrong key or database file is corrupt.</source>
-        <translation type="unfinished"/>
+        <translation type="unfinished">Mauvaise clé ou fichier de base de données corrompu.</translation>
     </message>
 </context>
 <context>
@@ -897,7 +917,7 @@ Voulez-vous quand même la sauvegarder ?</translation>
     <message>
         <source>The selected file is an old KeePass 1 database (.kdb).
 
-You can import it by clicking on Database &gt; 'Import KeePass 1 database'.
+You can import it by clicking on Database &gt; &apos;Import KeePass 1 database&apos;.
 This is a one-way migration. You won&apos;t be able to open the imported database with the old KeePassX 0.4 version.</source>
         <translation>Le fichier sélectionné est une ancienne base de données pour KeePass 1 (.kdb).
 
@@ -1151,64 +1171,6 @@ Ceci est une migration à sens unique. Vous ne serez plus en mesure d&apos;ouvri
     </message>
 </context>
 <context>
-    <name>QCommandLineParser</name>
-    <message>
-        <source>Displays version information.</source>
-        <translation>Afficher les informations de version.</translation>
-    </message>
-    <message>
-        <source>Displays this help.</source>
-        <translation>Afficher cette aide.</translation>
-    </message>
-    <message>
-        <source>Unknown option &apos;%1&apos;.</source>
-        <translation>Option inconnue &apos;%1&apos;.</translation>
-    </message>
-    <message>
-        <source>Unknown options: %1.</source>
-        <translation>Options inconnues : %1.</translation>
-    </message>
-    <message>
-        <source>Missing value after &apos;%1&apos;.</source>
-        <translation>Valeur manquante après &apos;%1&apos;.</translation>
-    </message>
-    <message>
-        <source>Unexpected value after &apos;%1&apos;.</source>
-        <translation>Valeur inattendue après &apos;%1&apos;.</translation>
-    </message>
-    <message>
-        <source>[options]</source>
-        <translation>[options]</translation>
-    </message>
-    <message>
-        <source>Usage: %1</source>
-        <translation>Utilisation : %1</translation>
-    </message>
-    <message>
-        <source>Options:</source>
-        <translation>Options :</translation>
-    </message>
-    <message>
-        <source>Arguments:</source>
-        <translation>Arguments :</translation>
-    </message>
-</context>
-<context>
-    <name>QSaveFile</name>
-    <message>
-        <source>Existing file %1 is not writable</source>
-        <translation>Le fichier existant %1 n&apos;est pas accessible en écriture</translation>
-    </message>
-    <message>
-        <source>Writing canceled by application</source>
-        <translation>Écriture annulée par l&apos;application</translation>
-    </message>
-    <message>
-        <source>Partial write. Partition full?</source>
-        <translation>Écriture partielle. Partition pleine ?</translation>
-    </message>
-</context>
-<context>
     <name>QtIOCompressor</name>
     <message>
         <source>Internal zlib error when compressing: </source>
@@ -1334,6 +1296,10 @@ Ceci est une migration à sens unique. Vous ne serez plus en mesure d&apos;ouvri
         <source>Hide window to system tray on App start</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Show TOTP in a dialog window</source>
+        <translation type="unfinished">Visualiser le résultat TOTP dans une fenêtre de dialogue</translation>
+    </message>
 </context>
 <context>
     <name>SettingsWidgetSecurity</name>
@@ -1356,6 +1322,21 @@ Ceci est une migration à sens unique. Vous ne serez plus en mesure d&apos;ouvri
     <message>
         <source>Always ask before performing auto-type</source>
         <translation>Toujours demander avant d&apos;effectuer un remplissage automatique</translation>
+    </message>
+</context>
+<context>
+    <name>TOTPSettings</name>
+    <message>
+        <source>Dialog</source>
+        <translation>Dialogue</translation>
+    </message>
+    <message>
+        <source>Enter the TOTP Seed:</source>
+        <translation>Entrez la semence TOTP:</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>OK</translation>
     </message>
 </context>
 <context>
