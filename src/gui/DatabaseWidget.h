@@ -20,6 +20,8 @@
 
 #include <QScopedPointer>
 #include <QStackedWidget>
+#include <QFileSystemWatcher>
+#include <QTimer>
 
 #include "core/Uuid.h"
 
@@ -41,6 +43,8 @@ class QMenu;
 class QSplitter;
 class QLabel;
 class UnlockDatabaseWidget;
+class UnlockDatabaseDialog;
+class QFileSystemWatcher;
 
 class DatabaseWidget : public QStackedWidget
 {
@@ -62,6 +66,7 @@ public:
     bool canDeleteCurrentGroup() const;
     bool isInSearchMode() const;
     QString getCurrentSearch();
+    Group* currentGroup() const;
     int addWidget(QWidget* w);
     void setCurrentIndex(int index);
     void setCurrentWidget(QWidget* widget);
@@ -84,13 +89,19 @@ public:
     bool currentEntryHasUrl();
     bool currentEntryHasNotes();
     bool currentEntryHasTOTP();
+    GroupView* groupView();
+    EntryView* entryView();
+    void showUnlockDialog();
+    void closeUnlockDialog();
+    void ignoreNextAutoreload();
 
 Q_SIGNALS:
     void closeRequest();
     void currentModeChanged(DatabaseWidget::Mode mode);
     void groupChanged();
     void entrySelectionChanged();
-    void databaseChanged(Database* newDb);
+    void databaseChanged(Database* newDb, bool unsavedChanges);
+    void databaseMerged(Database* mergedDb);
     void groupContextMenuRequested(const QPoint& globalPos);
     void entryContextMenuRequested(const QPoint& globalPos);
     void unlockedDatabase();
@@ -106,6 +117,7 @@ public Q_SLOTS:
     void createEntry();
     void cloneEntry();
     void deleteEntries();
+    void setFocus();
     void copyTitle();
     void copyUsername();
     void copyPassword();
@@ -120,23 +132,27 @@ public Q_SLOTS:
     void openUrlForEntry(Entry* entry);
     void createGroup();
     void deleteGroup();
+    void onGroupChanged(Group* group);
+    void switchToView(bool accepted);
     void switchToEntryEdit();
     void switchToGroupEdit();
     void switchToMasterKeyChange();
     void switchToDatabaseSettings();
     void switchToOpenDatabase(const QString& fileName);
     void switchToOpenDatabase(const QString& fileName, const QString& password, const QString& keyFile);
+    void switchToOpenMergeDatabase(const QString& fileName);
+    void switchToOpenMergeDatabase(const QString& fileName, const QString& password, const QString& keyFile);
     void switchToImportKeepass1(const QString& fileName);
+    void databaseModified();
+    void databaseSaved();
     // Search related slots
     void search(const QString& searchtext);
     void setSearchCaseSensitive(bool state);
-    void setSearchCurrentGroup(bool state);
     void endSearch();
 
 private Q_SLOTS:
     void entryActivationSignalReceived(Entry* entry, EntryModel::ModelColumn column);
     void switchBackToEntryEdit();
-    void switchToView(bool accepted);
     void switchToHistoryView(Entry* entry);
     void switchToEntryEdit(Entry* entry);
     void switchToEntryEdit(Entry* entry, bool create);
@@ -145,9 +161,12 @@ private Q_SLOTS:
     void emitEntryContextMenuRequested(const QPoint& pos);
     void updateMasterKey(bool accepted);
     void openDatabase(bool accepted);
+    void mergeDatabase(bool accepted);
     void unlockDatabase(bool accepted);
     void emitCurrentModeChanged();
-    void clearLastGroup(Group* group);
+    // Database autoreload slots
+    void onWatchedFileChanged();
+    void reloadDatabaseFile();
 
 private:
     void setClipboardTextAndMinimize(const QString& text);
@@ -162,8 +181,10 @@ private:
     ChangeMasterKeyWidget* m_changeMasterKeyWidget;
     DatabaseSettingsWidget* m_databaseSettingsWidget;
     DatabaseOpenWidget* m_databaseOpenWidget;
+    DatabaseOpenWidget* m_databaseOpenMergeWidget;
     KeePass1OpenWidget* m_keepass1OpenWidget;
     UnlockDatabaseWidget* m_unlockDatabaseWidget;
+    UnlockDatabaseDialog* m_unlockDatabaseDialog;
     QSplitter* m_splitter;
     GroupView* m_groupView;
     EntryView* m_entryView;
@@ -171,14 +192,19 @@ private:
     Group* m_newGroup;
     Entry* m_newEntry;
     Group* m_newParent;
-    Group* m_lastGroup;
     QString m_filename;
     Uuid m_groupBeforeLock;
 
     // Search state
     QString m_lastSearchText;
     bool m_searchCaseSensitive;
-    bool m_searchCurrentGroup;
+
+    // Autoreload
+    QFileSystemWatcher m_fileWatcher;
+    QTimer m_fileWatchTimer;
+    bool m_ignoreNextAutoreload;
+    QTimer m_ignoreWatchTimer;
+    bool m_databaseModified;
 };
 
 #endif // KEEPASSX_DATABASEWIDGET_H

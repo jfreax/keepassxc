@@ -21,6 +21,7 @@
 #include <QApplication>
 #include <QDialogButtonBox>
 #include <QLineEdit>
+#include <QLabel>
 #include <QMimeData>
 #include <QPushButton>
 #include <QSpinBox>
@@ -29,6 +30,9 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTimer>
+#include <QSignalSpy>
+#include <QClipboard>
+#include <QDebug>
 
 #include "config-keepassx-tests.h"
 #include "core/Config.h"
@@ -44,6 +48,7 @@
 #include "gui/FileDialog.h"
 #include "gui/MainWindow.h"
 #include "gui/MessageBox.h"
+#include "gui/SearchWidget.h"
 #include "gui/entry/EditEntryWidget.h"
 #include "gui/entry/EntryView.h"
 #include "gui/group/GroupModel.h"
@@ -64,21 +69,22 @@ void TestGui::initTestCase()
     QByteArray tmpData;
     QFile sourceDbFile(QString(KEEPASSX_TEST_DATA_DIR).append("/NewDatabase.kdbx"));
     QVERIFY(sourceDbFile.open(QIODevice::ReadOnly));
-    QVERIFY(Tools::readAllFromDevice(&sourceDbFile, tmpData));
+    QVERIFY(Tools::readAllFromDevice(&sourceDbFile, m_dbData));
     sourceDbFile.close();
-
-    // Write the temp storage to a temp database file for use in our tests
-    QVERIFY(m_dbFile.open());
-    QCOMPARE(m_dbFile.write(tmpData), static_cast<qint64>((tmpData.size())));
-    m_dbFile.close();
-
-    m_dbFileName = QFileInfo(m_dbFile).fileName();
 }
 
 // Every test starts with opening the temp database
 void TestGui::init()
 {
-    fileDialog()->setNextFileName(m_dbFile.fileName());
+    // Write the temp storage to a temp database file for use in our tests
+    QVERIFY(m_dbFile.open());
+    QCOMPARE(m_dbFile.write(m_dbData), static_cast<qint64>((m_dbData.size())));
+    m_dbFile.close();
+
+    m_dbFileName = m_dbFile.fileName();
+    m_dbFilePath = m_dbFile.filePath();
+
+    fileDialog()->setNextFileName(m_dbFilePath);
     triggerAction("actionDatabaseOpen");
 
     QWidget* databaseOpenWidget = m_mainWindow->findChild<QWidget*>("databaseOpenWidget");
@@ -105,6 +111,105 @@ void TestGui::cleanup()
 
     m_db = nullptr;
     m_dbWidget = nullptr;
+}
+
+void TestGui::testMergeDatabase()
+{
+    // It is safe to ignore the warning this line produces
+    QSignalSpy dbMergeSpy(m_dbWidget, SIGNAL(databaseMerged(Database*)));
+
+    // set file to merge from
+    fileDialog()->setNextFileName(QString(KEEPASSX_TEST_DATA_DIR).append("/MergeDatabase.kdbx"));
+    triggerAction("actionDatabaseMerge");
+
+    QWidget* databaseOpenMergeWidget = m_mainWindow->findChild<QWidget*>("databaseOpenMergeWidget");
+    QLineEdit* editPasswordMerge = databaseOpenMergeWidget->findChild<QLineEdit*>("editPassword");
+    QVERIFY(editPasswordMerge->isVisible());
+
+    m_tabWidget->currentDatabaseWidget()->setCurrentWidget(databaseOpenMergeWidget);
+
+    QTest::keyClicks(editPasswordMerge, "a");
+    QTest::keyClick(editPasswordMerge, Qt::Key_Enter);
+
+    QTRY_COMPARE(dbMergeSpy.count(), 1);
+    QTRY_VERIFY(m_tabWidget->tabText(m_tabWidget->currentIndex()).contains("*"));
+
+    m_db = m_tabWidget->currentDatabaseWidget()->database();
+
+    // there are seven child groups of the root group
+    QCOMPARE(m_db->rootGroup()->children().size(), 7);
+    // the merged group should contain an entry
+    QCOMPARE(m_db->rootGroup()->children().at(6)->entries().size(), 1);
+    // the General group contains one entry merged from the other db
+    QCOMPARE(m_db->rootGroup()->findChildByName("General")->entries().size(), 1);
+}
+
+void TestGui::testAutoreloadDatabase()
+{
+    config()->set("AutoReloadOnChange", false);
+
+    // Load the MergeDatabase.kdbx file into temporary storage
+    QByteArray tmpData;
+    QFile mergeDbFile(QString(KEEPASSX_TEST_DATA_DIR).append("/MergeDatabase.kdbx"));
+    QVERIFY(mergeDbFile.open(QIODevice::ReadOnly));
+    QVERIFY(Tools::readAllFromDevice(&mergeDbFile, tmpData));
+    mergeDbFile.close();
+
+    // Test accepting new file in autoreload
+    MessageBox::setNextAnswer(QMessageBox::Yes);
+    // Overwrite the current database with the temp data
+    QVERIFY(m_dbFile.open());
+    QVERIFY(m_dbFile.write(tmpData, static_cast<qint64>(tmpData.size())));
+    m_dbFile.close();
+    Tools::wait(1500);
+
+    m_db = m_dbWidget->database();
+
+    // the General group contains one entry from the new db data
+    QCOMPARE(m_db->rootGroup()->findChildByName("General")->entries().size(), 1);
+    QVERIFY(! m_tabWidget->tabText(m_tabWidget->currentIndex()).endsWith("*"));
+
+    // Reset the state
+    cleanup();
+    init();
+
+    // Test rejecting new file in autoreload
+    MessageBox::setNextAnswer(QMessageBox::No);
+    // Overwrite the current temp database with a new file
+    m_dbFile.open();
+    QVERIFY(m_dbFile.write(tmpData, static_cast<qint64>(tmpData.size())));
+    m_dbFile.close();
+    Tools::wait(1500);
+
+    m_db = m_dbWidget->database();
+
+    // Ensure the merge did not take place
+    QCOMPARE(m_db->rootGroup()->findChildByName("General")->entries().size(), 0);
+    QVERIFY(m_tabWidget->tabText(m_tabWidget->currentIndex()).endsWith("*"));
+
+    // Reset the state
+    cleanup();
+    init();
+
+     // Test accepting a merge of edits into autoreload
+    // Turn on autoload so we only get one messagebox (for the merge)
+    config()->set("AutoReloadOnChange", true);
+
+    // Modify some entries
+    testEditEntry();
+
+    // This is saying yes to merging the entries
+    MessageBox::setNextAnswer(QMessageBox::Yes);
+    // Overwrite the current database with the temp data
+    QVERIFY(m_dbFile.open());
+    QVERIFY(m_dbFile.write(tmpData, static_cast<qint64>(tmpData.size())));
+    m_dbFile.close();
+    Tools::wait(1500);
+
+    m_db = m_dbWidget->database();
+
+    QCOMPARE(m_db->rootGroup()->findChildByName("General")->entries().size(), 1);
+    QVERIFY(m_tabWidget->tabText(m_tabWidget->currentIndex()).endsWith("*"));
 }
 
 void TestGui::testTabs()
@@ -185,6 +290,10 @@ void TestGui::testAddEntry()
     // Add entry "something 2"
     QTest::mouseClick(entryNewWidget, Qt::LeftButton);
     QTest::keyClicks(titleEdit, "something 2");
+    QLineEdit* passwordEdit = editEntryWidget->findChild<QLineEdit*>("passwordEdit");
+    QLineEdit* passwordRepeatEdit = editEntryWidget->findChild<QLineEdit*>("passwordRepeatEdit");
+    QTest::keyClicks(passwordEdit, "something 2");
+    QTest::keyClicks(passwordRepeatEdit, "something 2");
     QTest::mouseClick(editEntryWidgetButtonBox->button(QDialogButtonBox::Ok), Qt::LeftButton);
 
     // Add entry "something 3"
@@ -196,6 +305,80 @@ void TestGui::testAddEntry()
     QTRY_COMPARE(entryView->model()->rowCount(), 4);
 }
 
+void TestGui::testEntryEntropy()
+{
+    QToolBar* toolBar = m_mainWindow->findChild<QToolBar*>("toolBar");
+
+    // Find the new entry action
+    QAction* entryNewAction = m_mainWindow->findChild<QAction*>("actionEntryNew");
+    QVERIFY(entryNewAction->isEnabled());
+
+    // Find the button associated with the new entry action
+    QWidget* entryNewWidget = toolBar->widgetForAction(entryNewAction);
+    QVERIFY(entryNewWidget->isVisible());
+    QVERIFY(entryNewWidget->isEnabled());
+
+    // Click the new entry button and check that we enter edit mode
+    QTest::mouseClick(entryNewWidget, Qt::LeftButton);
+    QCOMPARE(m_dbWidget->currentMode(), DatabaseWidget::EditMode);
+
+    // Add entry "test" and confirm added
+    EditEntryWidget* editEntryWidget = m_dbWidget->findChild<EditEntryWidget*>("editEntryWidget");
+    QLineEdit* titleEdit = editEntryWidget->findChild<QLineEdit*>("titleEdit");
+    QTest::keyClicks(titleEdit, "test");
+
+    // Open the password generator
+    QToolButton* generatorButton = editEntryWidget->findChild<QToolButton*>("tooglePasswordGeneratorButton");
+    QTest::mouseClick(generatorButton, Qt::LeftButton);
+
+    // Type in some password
+    QLineEdit* editNewPassword = editEntryWidget->findChild<QLineEdit*>("editNewPassword");
+    QLabel* entropyLabel = editEntryWidget->findChild<QLabel*>("entropyLabel");
+    QLabel* strengthLabel = editEntryWidget->findChild<QLabel*>("strengthLabel");
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "hello");
+    QCOMPARE(entropyLabel->text(), QString("Entropy: 6.38 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Poor"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "helloworld");
+    QCOMPARE(entropyLabel->text(), QString("Entropy: 13.10 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Poor"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "password1");
+    QCOMPARE(entropyLabel->text(), QString("Entropy: 4.00 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Poor"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "D0g..................");
+    QCOMPARE(entropyLabel->text(), QString("Entropy: 19.02 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Poor"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "Tr0ub4dour&3");
+    QCOMPARE(entropyLabel->text(), QString("Entropy: 30.87 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Poor"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "correcthorsebatterystaple");
+    QCOMPARE(entropyLabel->text(),  QString("Entropy: 47.98 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Weak"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "YQC3kbXbjC652dTDH");
+    QCOMPARE(entropyLabel->text(),  QString("Entropy: 96.07 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Good"));
+
+    editNewPassword->setText("");
+    QTest::keyClicks(editNewPassword, "Bs5ZFfthWzR8DGFEjaCM6bGqhmCT4km");
+    QCOMPARE(entropyLabel->text(),  QString("Entropy: 174.59 bit"));
+    QCOMPARE(strengthLabel->text(), QString("Password Quality: Excellent"));
+
+    // We are done
+}
+
 void TestGui::testSearch()
 {
     // Add canned entries for consistent testing
@@ -203,36 +386,63 @@ void TestGui::testSearch()
 
     QToolBar* toolBar = m_mainWindow->findChild<QToolBar*>("toolBar");
 
-    QWidget* searchActionWidget = toolBar->findChild<QWidget*>("SearchWidget");
-    QVERIFY(searchActionWidget->isEnabled());
-    QLineEdit* searchEdit = searchActionWidget->findChild<QLineEdit*>("searchEdit");
+    SearchWidget* searchWidget = toolBar->findChild<SearchWidget*>("SearchWidget");
+    QVERIFY(searchWidget->isEnabled());
+    QLineEdit* searchTextEdit = searchWidget->findChild<QLineEdit*>("searchEdit");
 
     EntryView* entryView = m_dbWidget->findChild<EntryView*>("entryView");
     QVERIFY(entryView->isVisible());
 
     // Enter search
-    QTest::mouseClick(searchEdit, Qt::LeftButton);
-    QTRY_VERIFY(searchEdit->hasFocus());
+    QTest::mouseClick(searchTextEdit, Qt::LeftButton);
+    QTRY_VERIFY(searchTextEdit->hasFocus());
     // Search for "ZZZ"
-    QTest::keyClicks(searchEdit, "ZZZ");
-    QTRY_COMPARE(searchEdit->text(), QString("ZZZ"));
+    QTest::keyClicks(searchTextEdit, "ZZZ");
+    QTRY_COMPARE(searchTextEdit->text(), QString("ZZZ"));
     QTRY_VERIFY(m_dbWidget->isInSearchMode());
     QTRY_COMPARE(entryView->model()->rowCount(), 0);
     // Escape clears searchedit and retains focus
-    QTest::keyClick(searchEdit, Qt::Key_Escape);
-    QTRY_VERIFY(searchEdit->text().isEmpty());
-    QTRY_VERIFY(searchEdit->hasFocus());
+    QTest::keyClick(searchTextEdit, Qt::Key_Escape);
+    QTRY_VERIFY(searchTextEdit->text().isEmpty());
+    QTRY_VERIFY(searchTextEdit->hasFocus());
     QCOMPARE(m_dbWidget->currentMode(), DatabaseWidget::ViewMode);
     // Search for "some"
-    QTest::keyClicks(searchEdit, "some");
+    QTest::keyClicks(searchTextEdit, "some");
     QTRY_VERIFY(m_dbWidget->isInSearchMode());
     QTRY_COMPARE(entryView->model()->rowCount(), 3);
-    // Press Down to focus on the entry view
-    QTest::keyClicks(searchEdit, "thing");
+    // Search for "someTHING"
+    QTest::keyClicks(searchTextEdit, "THING");
     QTRY_COMPARE(entryView->model()->rowCount(), 2);
-    //QVERIFY(!entryView->hasFocus());
-    //QTest::keyClick(searchEdit, Qt::Key_Down);
-    //QVERIFY(entryView->hasFocus());
+    // Press Down to focus on the entry view if at EOL
+    QTest::keyClick(searchTextEdit, Qt::Key_Right, Qt::ControlModifier);
+    QTRY_VERIFY(searchTextEdit->hasFocus());
+    QTest::keyClick(searchTextEdit, Qt::Key_Down);
+    QTRY_VERIFY(entryView->hasFocus());
+    // Test clipboard
+    QClipboard *clipboard = QApplication::clipboard();
+    QTest::keyClick(entryView, Qt::Key_C, Qt::ControlModifier);
+    QModelIndex searchedItem = entryView->model()->index(0, 1);
+    Entry* searchedEntry = entryView->entryFromIndex(searchedItem);
+    QTRY_COMPARE(searchedEntry->password(), clipboard->text());
+    // Restore focus
+    QTest::mouseClick(searchTextEdit, Qt::LeftButton);
+
+    // Test case sensitive search
+    searchWidget->setCaseSensitive(true);
+    QTRY_COMPARE(entryView->model()->rowCount(), 0);
+    searchWidget->setCaseSensitive(false);
+    QTRY_COMPARE(entryView->model()->rowCount(), 2);
+
+    // Test group search
+    GroupView* groupView = m_dbWidget->findChild<GroupView*>("groupView");
+    QCOMPARE(groupView->currentGroup(), m_db->rootGroup());
+    QModelIndex rootGroupIndex = groupView->model()->index(0, 0);
+    clickIndex(groupView->model()->index(0, 0, rootGroupIndex), groupView, Qt::LeftButton);
+    QCOMPARE(groupView->currentGroup()->name(), QString("General"));
+    QTRY_COMPARE(entryView->model()->rowCount(), 0);
+    // reset
+    clickIndex(rootGroupIndex, groupView, Qt::LeftButton);
+    QCOMPARE(groupView->currentGroup(), m_db->rootGroup());
 
     // Try to edit the first entry from the search view
     QModelIndex item = entryView->model()->index(0, 1);
@@ -260,12 +470,9 @@ void TestGui::testSearch()
     QCOMPARE(entry->title(), origTitle.append("_edited"));
 
     // Cancel search, should return to normal view
-    QTest::mouseClick(searchEdit, Qt::LeftButton);
-    QTest::keyClick(searchEdit, Qt::Key_Escape);
+    QTest::mouseClick(searchTextEdit, Qt::LeftButton);
+    QTest::keyClick(searchTextEdit, Qt::Key_Escape);
     QTRY_COMPARE(m_dbWidget->currentMode(), DatabaseWidget::ViewMode);
-    //QCOMPARE(entryView->model()->rowCount(), 4);
-
-    // TODO: add tests to confirm case sensitive and group search
 }
 
 void TestGui::testDeleteEntry()
@@ -399,7 +606,7 @@ void TestGui::testDragAndDropGroup()
 
 void TestGui::testSaveAs()
 {
-    QFileInfo fileInfo(m_dbFile.fileName());
+    QFileInfo fileInfo(m_dbFilePath);
     QDateTime lastModified = fileInfo.lastModified();
 
     m_db->metadata()->setName("SaveAs");
@@ -436,6 +643,7 @@ void TestGui::testSave()
 
 void TestGui::testDatabaseSettings()
 {
+    m_db->metadata()->setName("Save");
     triggerAction("actionChangeDatabaseSettings");
     QWidget* dbSettingsWidget = m_dbWidget->findChild<QWidget*>("databaseSettingsWidget");
     QSpinBox* transformRoundsSpinBox = dbSettingsWidget->findChild<QSpinBox*>("transformRoundsSpinBox");
@@ -501,7 +709,7 @@ void TestGui::cleanupTestCase()
 void TestGui::checkDatabase(QString dbFileName)
 {
     if (dbFileName.isEmpty())
-        dbFileName = m_dbFile.fileName();
+        dbFileName = m_dbFilePath;
 
     CompositeKey key;
     key.addKey(PasswordKey("a"));

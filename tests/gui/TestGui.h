@@ -18,9 +18,10 @@
 #ifndef KEEPASSX_TESTGUI_H
 #define KEEPASSX_TESTGUI_H
 
+#include "TemporaryFile.h"
+
 #include <QAbstractItemModel>
 #include <QObject>
-#include <QTemporaryFile>
 
 class Database;
 class DatabaseTabWidget;
@@ -38,9 +39,12 @@ private Q_SLOTS:
     void cleanup();
     void cleanupTestCase();
 
+    void testMergeDatabase();
+    void testAutoreloadDatabase();
     void testTabs();
     void testEditEntry();
     void testAddEntry();
+    void testEntryEntropy();
     void testSearch();
     void testDeleteEntry();
     void testCloneEntry();
@@ -63,8 +67,10 @@ private:
     MainWindow* m_mainWindow;
     DatabaseTabWidget* m_tabWidget;
     DatabaseWidget* m_dbWidget;
-    QTemporaryFile m_dbFile;
+    QByteArray m_dbData;
+    TemporaryFile m_dbFile;
     QString m_dbFileName;
+    QString m_dbFilePath;
     Database* m_db;
 };
 

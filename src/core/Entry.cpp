@@ -293,6 +293,35 @@ QString Entry::defaultAutoTypeSequence() const
     return m_data.defaultAutoTypeSequence;
 }
 
+QString Entry::effectiveAutoTypeSequence() const
+{
+    if (!m_data.defaultAutoTypeSequence.isEmpty()) {
+        return m_data.defaultAutoTypeSequence;
+    }
+    QString sequence;
+
+    const Group* grp = group();
+    if(grp) {
+      sequence = grp->effectiveAutoTypeSequence();
+    } else {
+      return QString();
+    }
+
+    if (sequence.isEmpty() && (!username().isEmpty() || !password().isEmpty())) {
+        if (username().isEmpty()) {
+            sequence = "{PASSWORD}{ENTER}";
+        }
+       else if (password().isEmpty()) {
+          sequence = "{USERNAME}{ENTER}";
+        }
+        else {
+            sequence = "{USERNAME}{TAB}{PASSWORD}{ENTER}";
+        }
+    }
+
+    return sequence;
+}
+
 AutoTypeAssociations* Entry::autoTypeAssociations()
 {
     return m_autoTypeAssociations;
@@ -716,9 +745,18 @@ const Database* Entry::database() const
     }
 }
 
-QString Entry::resolvePlaceholders(const QString& str) const
+QString Entry::resolveMultiplePlaceholders(const QString& str) const
 {
     QString result = str;
+    QRegExp tmplRegEx("({.*})", Qt::CaseInsensitive, QRegExp::RegExp2);
+    QStringList tmplList;
+    int pos = 0;
+
+    while ((pos = tmplRegEx.indexIn(str, pos)) != -1) {
+        QString found = tmplRegEx.cap(1);
+        result.replace(found,resolvePlaceholder(found));
+        pos += tmplRegEx.matchedLength();
+    }
 
     result.replace("{TITLE}", title(), Qt::CaseInsensitive);
     result.replace("{USERNAME}", username(), Qt::CaseInsensitive);
@@ -726,8 +764,27 @@ QString Entry::resolvePlaceholders(const QString& str) const
     result.replace("{PASSWORD}", password(), Qt::CaseInsensitive);
     result.replace("{NOTES}", notes(), Qt::CaseInsensitive);
     result.replace("{TOTP}", getTOTP(), Qt::CaseInsensitive);
+    return result;
+}
 
-    // TODO: lots of other placeholders missing
+QString Entry::resolvePlaceholder(const QString& str) const
+{
+    QString result = str;
+
+    const QList<QString> keyList = attributes()->keys();
+    for (const QString& key : keyList) {
+        Qt::CaseSensitivity cs = Qt::CaseInsensitive;
+        if (!EntryAttributes::isDefaultAttribute(key)) {
+            cs = Qt::CaseSensitive;
+        }
+
+        QString k = key;
+        k.prepend("{").append("}");
+        if (result.compare(k,cs)==0) {
+            result.replace(result,attributes()->value(key));
+            break;
+        }
+    }
 
     return result;
 }

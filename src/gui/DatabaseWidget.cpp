@@ -21,6 +21,7 @@
 #include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QFile>
 #include <QLineEdit>
 #include <QKeyEvent>
 #include <QSplitter>
@@ -36,6 +37,7 @@
 #include "core/Group.h"
 #include "core/Metadata.h"
 #include "core/Tools.h"
+#include "format/KeePass2Reader.h"
 #include "gui/ChangeMasterKeyWidget.h"
 #include "gui/Clipboard.h"
 #include "gui/DatabaseOpenWidget.h"
@@ -43,6 +45,7 @@
 #include "gui/KeePass1OpenWidget.h"
 #include "gui/MessageBox.h"
 #include "gui/UnlockDatabaseWidget.h"
+#include "gui/UnlockDatabaseDialog.h"
 #include "gui/entry/EditEntryWidget.h"
 #include "gui/entry/EntryView.h"
 #include "gui/group/EditGroupWidget.h"
@@ -122,10 +125,14 @@ DatabaseWidget::DatabaseWidget(Database* db, QWidget* parent)
     m_databaseSettingsWidget->setObjectName("databaseSettingsWidget");
     m_databaseOpenWidget = new DatabaseOpenWidget();
     m_databaseOpenWidget->setObjectName("databaseOpenWidget");
+    m_databaseOpenMergeWidget = new DatabaseOpenWidget();
+    m_databaseOpenMergeWidget->setObjectName("databaseOpenMergeWidget");
     m_keepass1OpenWidget = new KeePass1OpenWidget();
     m_keepass1OpenWidget->setObjectName("keepass1OpenWidget");
     m_unlockDatabaseWidget = new UnlockDatabaseWidget();
     m_unlockDatabaseWidget->setObjectName("unlockDatabaseWidget");
+    m_unlockDatabaseDialog = new UnlockDatabaseDialog();
+    m_unlockDatabaseDialog->setObjectName("unlockDatabaseDialog");
     addWidget(m_mainWidget);
     addWidget(m_editEntryWidget);
     addWidget(m_editGroupWidget);
@@ -133,14 +140,14 @@ DatabaseWidget::DatabaseWidget(Database* db, QWidget* parent)
     addWidget(m_databaseSettingsWidget);
     addWidget(m_historyEditEntryWidget);
     addWidget(m_databaseOpenWidget);
+    addWidget(m_databaseOpenMergeWidget);
     addWidget(m_keepass1OpenWidget);
     addWidget(m_unlockDatabaseWidget);
 
     connect(m_splitter, SIGNAL(splitterMoved(int,int)), SIGNAL(splitterSizesChanged()));
     connect(m_entryView->header(), SIGNAL(sectionResized(int,int,int)), SIGNAL(entryColumnSizesChanged()));
-    connect(m_groupView, SIGNAL(groupChanged(Group*)), this, SLOT(clearLastGroup(Group*)));
+    connect(m_groupView, SIGNAL(groupChanged(Group*)), this, SLOT(onGroupChanged(Group*)));
     connect(m_groupView, SIGNAL(groupChanged(Group*)), SIGNAL(groupChanged()));
-    connect(m_groupView, SIGNAL(groupChanged(Group*)), m_entryView, SLOT(setGroup(Group*)));
     connect(m_entryView, SIGNAL(entryActivated(Entry*, EntryModel::ModelColumn)),
             SLOT(entryActivationSignalReceived(Entry*, EntryModel::ModelColumn)));
     connect(m_entryView, SIGNAL(entrySelectionChanged()), SIGNAL(entrySelectionChanged()));
@@ -151,12 +158,22 @@ DatabaseWidget::DatabaseWidget(Database* db, QWidget* parent)
     connect(m_changeMasterKeyWidget, SIGNAL(editFinished(bool)), SLOT(updateMasterKey(bool)));
     connect(m_databaseSettingsWidget, SIGNAL(editFinished(bool)), SLOT(switchToView(bool)));
     connect(m_databaseOpenWidget, SIGNAL(editFinished(bool)), SLOT(openDatabase(bool)));
+    connect(m_databaseOpenMergeWidget, SIGNAL(editFinished(bool)), SLOT(mergeDatabase(bool)));
     connect(m_keepass1OpenWidget, SIGNAL(editFinished(bool)), SLOT(openDatabase(bool)));
     connect(m_unlockDatabaseWidget, SIGNAL(editFinished(bool)), SLOT(unlockDatabase(bool)));
+	connect(m_unlockDatabaseDialog, SIGNAL(unlockDone(bool)), SLOT(unlockDatabase(bool)));
+    connect(&m_fileWatcher, SIGNAL(fileChanged(QString)), this, SLOT(onWatchedFileChanged()));
+    connect(&m_fileWatchTimer, SIGNAL(timeout()), this, SLOT(reloadDatabaseFile()));
+    connect(&m_ignoreWatchTimer, SIGNAL(timeout()), this, SLOT(onWatchedFileChanged()));
     connect(this, SIGNAL(currentChanged(int)), this, SLOT(emitCurrentModeChanged()));
 
+    m_databaseModified = false;
+
+    m_fileWatchTimer.setSingleShot(true);
+    m_ignoreWatchTimer.setSingleShot(true);
+    m_ignoreNextAutoreload = false;
+
     m_searchCaseSensitive = false;
-    m_searchCurrentGroup = false;
 
     setCurrentWidget(m_mainWidget);
 }
@@ -173,7 +190,8 @@ DatabaseWidget::Mode DatabaseWidget::currentMode() const
     else if (currentWidget() == m_mainWidget) {
         return DatabaseWidget::ViewMode;
     }
-    else if (currentWidget() == m_unlockDatabaseWidget) {
+    else if (currentWidget() == m_unlockDatabaseWidget ||
+             currentWidget() == m_databaseOpenWidget) {
         return DatabaseWidget::LockedMode;
     }
     else {
@@ -286,7 +304,7 @@ void DatabaseWidget::replaceDatabase(Database* db)
     Database* oldDb = m_db;
     m_db = db;
     m_groupView->changeDatabase(m_db);
-    Q_EMIT databaseChanged(m_db);
+    Q_EMIT databaseChanged(m_db, m_databaseModified);
     delete oldDb;
 }
 
@@ -417,6 +435,11 @@ void DatabaseWidget::deleteEntries()
     }
 }
 
+void DatabaseWidget::setFocus()
+{
+	m_entryView->setFocus();
+}
+
 void DatabaseWidget::copyTitle()
 {
     Entry* currentEntry = m_entryView->currentEntry();
@@ -515,7 +538,7 @@ void DatabaseWidget::openUrl()
 
 void DatabaseWidget::openUrlForEntry(Entry* entry)
 {
-    QString urlString = entry->resolvePlaceholders(entry->url());
+    QString urlString = entry->resolveMultiplePlaceholders(entry->url());
     if (urlString.isEmpty()) {
         return;
     }
@@ -654,11 +677,7 @@ void DatabaseWidget::switchToEntryEdit(Entry* entry)
 
 void DatabaseWidget::switchToEntryEdit(Entry* entry, bool create)
 {
-    Group* group = m_groupView->currentGroup();
-    if (!group) {
-        Q_ASSERT(m_entryView->inEntryListMode());
-        group = m_lastGroup;
-    }
+    Group* group = currentGroup();
     Q_ASSERT(group);
 
     m_editEntryWidget->loadEntry(entry, create, false, group->name(), m_db);
@@ -704,13 +723,37 @@ void DatabaseWidget::openDatabase(bool accepted)
         m_databaseOpenWidget = nullptr;
         delete m_keepass1OpenWidget;
         m_keepass1OpenWidget = nullptr;
+        m_fileWatcher.addPath(m_filename);
     }
     else {
+        m_fileWatcher.removePath(m_filename);
         if (m_databaseOpenWidget->database()) {
             delete m_databaseOpenWidget->database();
         }
         Q_EMIT closeRequest();
     }
+}
+
+void DatabaseWidget::mergeDatabase(bool accepted)
+{
+    if (accepted) {
+        if (!m_db) {
+            MessageBox::critical(this, tr("Error"), tr("No current database."));
+            return;
+        }
+
+        Database* srcDb = static_cast<DatabaseOpenWidget*>(sender())->database();
+
+        if (!srcDb) {
+            MessageBox::critical(this, tr("Error"), tr("No source database, nothing to do."));
+            return;
+        }
+
+        m_db->merge(srcDb);
+    }
+
+    setCurrentWidget(m_mainWidget);
+    Q_EMIT databaseMerged(m_db);
 }
 
 void DatabaseWidget::unlockDatabase(bool accepted)
@@ -720,7 +763,14 @@ void DatabaseWidget::unlockDatabase(bool accepted)
         return;
     }
 
-    replaceDatabase(static_cast<DatabaseOpenWidget*>(sender())->database());
+    Database *db = Q_NULLPTR;
+    if (sender() == m_unlockDatabaseDialog) {
+        db = m_unlockDatabaseDialog->database();
+    } else if (sender() == m_unlockDatabaseWidget) {
+        db = m_unlockDatabaseWidget->database();
+    }
+
+    replaceDatabase(db);
 
     const QList<Group*> groups = m_db->rootGroup()->groupsRecursive(true);
     for (Group* group : groups) {
@@ -734,6 +784,12 @@ void DatabaseWidget::unlockDatabase(bool accepted)
     setCurrentWidget(m_mainWidget);
     m_unlockDatabaseWidget->clearForms();
     Q_EMIT unlockedDatabase();
+
+    if (sender() == m_unlockDatabaseDialog) {
+        QList<Database*> dbList;
+        dbList.append(m_db);
+        autoType()->performGlobalAutoType(dbList);
+    }
 }
 
 void DatabaseWidget::entryActivationSignalReceived(Entry* entry, EntryModel::ModelColumn column)
@@ -795,11 +851,34 @@ void DatabaseWidget::switchToOpenDatabase(const QString& fileName, const QString
     m_databaseOpenWidget->enterKey(password, keyFile);
 }
 
+void DatabaseWidget::switchToOpenMergeDatabase(const QString& fileName)
+{
+    m_databaseOpenMergeWidget->load(fileName);
+    setCurrentWidget(m_databaseOpenMergeWidget);
+}
+
+void DatabaseWidget::switchToOpenMergeDatabase(const QString& fileName, const QString& password,
+                                          const QString& keyFile)
+{
+    switchToOpenMergeDatabase(fileName);
+    m_databaseOpenMergeWidget->enterKey(password, keyFile);
+}
+
 void DatabaseWidget::switchToImportKeepass1(const QString& fileName)
 {
     updateFilename(fileName);
     m_keepass1OpenWidget->load(fileName);
     setCurrentWidget(m_keepass1OpenWidget);
+}
+
+void DatabaseWidget::databaseModified()
+{
+    m_databaseModified = true;
+}
+
+void DatabaseWidget::databaseSaved()
+{
+    m_databaseModified = false;
 }
 
 void DatabaseWidget::search(const QString& searchtext)
@@ -812,16 +891,9 @@ void DatabaseWidget::search(const QString& searchtext)
 
     Q_EMIT searchModeAboutToActivate();
 
-    if (!isInSearchMode())
-    {
-        m_lastGroup = m_groupView->currentGroup();
-        Q_ASSERT(m_lastGroup);
-    }
+    Qt::CaseSensitivity caseSensitive = m_searchCaseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
 
-    Group* searchGroup = m_searchCurrentGroup ? m_lastGroup : m_db->rootGroup();
-    Qt::CaseSensitivity sensitivity = m_searchCaseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
-
-    QList<Entry*> searchResult = EntrySearcher().search(searchtext, searchGroup, sensitivity);
+    QList<Entry*> searchResult = EntrySearcher().search(searchtext, currentGroup(), caseSensitive);
 
     m_entryView->setEntryList(searchResult);
     m_lastSearchText = searchtext;
@@ -847,12 +919,13 @@ void DatabaseWidget::setSearchCaseSensitive(bool state)
         search(m_lastSearchText);
 }
 
-void DatabaseWidget::setSearchCurrentGroup(bool state)
+void DatabaseWidget::onGroupChanged(Group* group)
 {
-    m_searchCurrentGroup = state;
-
+    // Intercept group changes if in search mode
     if (isInSearchMode())
         search(m_lastSearchText);
+    else
+        m_entryView->setGroup(group);
 }
 
 QString DatabaseWidget::getCurrentSearch()
@@ -864,12 +937,10 @@ void DatabaseWidget::endSearch()
 {
     if (isInSearchMode())
     {
-        Q_ASSERT(m_lastGroup);
-
         Q_EMIT listModeAboutToActivate();
 
-        m_groupView->setCurrentGroup(m_lastGroup);
-        m_entryView->setGroup(m_lastGroup);
+        // Show the normal entry view of the current group
+        m_entryView->setGroup(currentGroup());
 
         Q_EMIT listModeActivated();
     }
@@ -906,11 +977,9 @@ bool DatabaseWidget::isInSearchMode() const
     return m_entryView->inEntryListMode();
 }
 
-void DatabaseWidget::clearLastGroup(Group* group)
+Group* DatabaseWidget::currentGroup() const
 {
-    if (group) {
-        m_lastGroup = nullptr;
-    }
+    return m_groupView->currentGroup();
 }
 
 void DatabaseWidget::lock()
@@ -934,7 +1003,97 @@ void DatabaseWidget::lock()
 
 void DatabaseWidget::updateFilename(const QString& fileName)
 {
+    if (! m_filename.isEmpty()) {
+        m_fileWatcher.removePath(m_filename);
+    }
+
+    m_fileWatcher.addPath(fileName);
     m_filename = fileName;
+}
+
+void DatabaseWidget::ignoreNextAutoreload()
+{
+    m_ignoreNextAutoreload = true;
+    m_ignoreWatchTimer.start(100);
+}
+
+void DatabaseWidget::onWatchedFileChanged()
+{
+    if (m_ignoreNextAutoreload) {
+        // Reset the watch
+        m_ignoreNextAutoreload = false;
+        m_ignoreWatchTimer.stop();
+        m_fileWatcher.addPath(m_filename);
+    }
+    else {
+        if (m_fileWatchTimer.isActive())
+            return;
+
+        m_fileWatchTimer.start(500);
+    }
+}
+
+void DatabaseWidget::reloadDatabaseFile()
+{
+    if (m_db == nullptr)
+        return;
+
+    if (! config()->get("AutoReloadOnChange").toBool()) {
+        // Ask if we want to reload the db
+        QMessageBox::StandardButton mb = MessageBox::question(this, tr("Autoreload Request"),
+                             tr("The database file has changed. Do you want to load the changes?"),
+                             QMessageBox::Yes | QMessageBox::No);
+
+        if (mb == QMessageBox::No) {
+            // Notify everyone the database does not match the file
+            emit m_db->modified();
+            m_databaseModified = true;
+            // Rewatch the database file
+            m_fileWatcher.addPath(m_filename);
+            return;
+        }
+    }
+
+    KeePass2Reader reader;
+    QFile file(m_filename);
+    if (file.open(QIODevice::ReadOnly)) {
+        Database* db = reader.readDatabase(&file, database()->key());
+        if (db != nullptr) {
+            if (m_databaseModified) {
+                // Ask if we want to merge changes into new database
+                QMessageBox::StandardButton mb = MessageBox::question(this, tr("Merge Request"),
+                                     tr("The database file has changed and you have unsaved changes."
+                                        "Do you want to merge your changes?"),
+                                     QMessageBox::Yes | QMessageBox::No);
+
+                if (mb == QMessageBox::Yes) {
+                    // Merge the old database into the new one
+                    m_db->setEmitModified(false);
+                    db->merge(m_db);
+                }
+                else {
+                    // Since we are accepting the new file as-is, internally mark as unmodified
+                    // TODO: when saving is moved out of DatabaseTabWidget, this should be replaced
+                    m_databaseModified = false;
+                }
+            }
+
+            replaceDatabase(db);
+        }
+        else {
+            MessageBox::critical(this, tr("Autoreload Failed"),
+                                 tr("Could not parse or unlock the new database file while attempting"
+                                    "to autoreload this database."));
+        }
+    }
+    else {
+        MessageBox::critical(this, tr("Autoreload Failed"),
+                             tr("Could not open the new database file while attempting to autoreload"
+                                "this database."));
+    }
+
+    // Rewatch the database file
+    m_fileWatcher.addPath(m_filename);
 }
 
 int DatabaseWidget::numberOfSelectedEntries() const
@@ -1016,4 +1175,25 @@ bool DatabaseWidget::currentEntryHasNotes()
         return false;
     }
     return !currentEntry->notes().isEmpty();
+}
+
+GroupView* DatabaseWidget::groupView() {
+    return m_groupView;
+}
+
+EntryView* DatabaseWidget::entryView() {
+    return m_entryView;
+}
+
+void DatabaseWidget::showUnlockDialog()
+{
+    m_unlockDatabaseDialog->clearForms();
+    m_unlockDatabaseDialog->setDBFilename(m_filename);
+    m_unlockDatabaseDialog->show();
+    m_unlockDatabaseDialog->activateWindow();
+}
+
+void DatabaseWidget::closeUnlockDialog()
+{
+    m_unlockDatabaseDialog->close();
 }
